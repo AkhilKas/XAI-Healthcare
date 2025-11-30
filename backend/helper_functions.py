@@ -20,7 +20,8 @@ from sklearn.metrics import (
 )
 from torch.nn.utils.rnn import pad_sequence
 
-from variables import *
+from scipy.signal import butter, filtfilt
+from .variables import *
 
 
 def auc_ci_bootstrap(y_true, y_proba, n_boot=1000, seed=42, ci=0.95):
@@ -148,3 +149,11 @@ def rnn_channel_importance_from_weights(obj, kind="lstm", layer=0):
     Wg = W.view(-1, H, W.shape[1])
     imp = Wg.sum(dim=(0, 1))
     return imp / (imp.sum() + 1e-12)
+
+
+def lowpass_filter(data, cutoff=6, fs=60, order=2):
+    # Simple Butterworth low-pass filter to remove noise
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return filtfilt(b, a, data, axis=0)
