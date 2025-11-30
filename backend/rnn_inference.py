@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 import pickle
 import torch
 
-from rnn_train import RNNClassifier, rnn_channel_importance_from_weights
-from variables import chan_name, DOFS, DEVICE
+from .rnn_train import RNNClassifier, rnn_channel_importance_from_weights
+from .variables import chan_name, DOFS, DEVICE
+from .helper_functions import lowpass_filter
 
 app = FastAPI()
 
@@ -50,110 +51,123 @@ def load_user_data(user, task):
     filesystem, S3, etc.
     """
     group, user_id = user.split("_")
-    print(group, user_id)  
     with open (f"pickled_datasets/{group}_data_task{task}.pkl", "rb") as file_path:
         user_data = pickle.load(file_path)
         user_data = user_data.get('PX0' + str(user_id)) if group == 'patient' else user_data.get('fx0' + str(user_id))
     return user_data
 
+# ---------- ROM ----------
+def compute_rom(seg, perc=95):
+    """
+    Computes ROM based on percentile range to reduce outlier effect.
+    """
+    if isinstance(seg, torch.Tensor):
+        seg = seg.detach().cpu().numpy()
+    lower = np.percentile(seg, 100 - perc, axis=0)
+    upper = np.percentile(seg, perc, axis=0)
+    rom = np.linalg.norm(upper - lower)
+    return rom
+
+# ---------- Movement Quality ----------
+def compute_movement_quality(seg, dt=1/60):
+    """
+    Movement quality based on normalized jerk and variability.
+    """
+    if isinstance(seg, torch.Tensor):
+        seg = seg.detach().cpu().numpy()
+
+    # Smooth the signal
+    seg = lowpass_filter(seg)
+
+    vel = np.gradient(seg, dt, axis=0)
+    acc = np.gradient(vel, dt, axis=0)
+    jerk = np.gradient(acc, dt, axis=0)
+
+    # Normalized jerk metric (higher = smoother)
+    traj_len = np.sum(np.linalg.norm(vel, axis=1)) * dt
+    njm = traj_len**2 / (np.sum(np.linalg.norm(jerk, axis=1)**2) * dt**5 + 1e-6)  # avoid div 0
+
+    # Variability metric: multidimensional variance
+    variability = 1 / (1 + np.trace(np.cov(seg.T)))  # higher = more consistent
+
+    # Weighted MQ score
+    mq_score = (0.6 * njm + 0.4 * variability) * 100
+    return np.clip(mq_score, 0, 100)
+
+# ---------- Compensation ----------
+def compute_compensation(head, left, right):
+    """
+    Quantifies compensation as excessive head movement relative to limb movement.
+    Also considers asymmetry between left/right limbs.
+    """
+    if isinstance(head, torch.Tensor):
+        head = head.detach().cpu().numpy()
+    if isinstance(left, torch.Tensor):
+        left = left.detach().cpu().numpy()
+    if isinstance(right, torch.Tensor):
+        right = right.detach().cpu().numpy()
+
+    wrist_disp = np.linalg.norm(np.ptp(left, axis=0)) + np.linalg.norm(np.ptp(right, axis=0))
+    head_disp = np.linalg.norm(np.ptp(head, axis=0))
+
+    compensation_ratio = head_disp / (wrist_disp + 1e-6)
+    asymmetry_ratio = np.abs(np.linalg.norm(np.ptp(left, axis=0)) - np.linalg.norm(np.ptp(right, axis=0))) / (wrist_disp + 1e-6)
+
+    # Combine into a score 0-100
+    comp_score = np.clip((compensation_ratio + 0.5 * asymmetry_ratio) * 100, 0, 100)
+    return comp_score
+
 
 # ROM / QUALITY / COMPENSATION COMPUTATION
-def compute_motion_metrics(sample, importance, alpha_rot = 0.5):
-    H = sample[:, 0:3]
-    L = sample[:, 6:9]
-    R = sample[:, 12:15]
+def compute_motion_metrics(sample, importance, alpha_rot=0.5, weights={'rom':0.4, 'mq':0.5, 'comp':0.1}):
+    H, L, R = sample[:, 0:3], sample[:, 6:9], sample[:, 12:15]
+    H_rot, L_rot, R_rot = sample[:, 3:6], sample[:, 9:12], sample[:, 15:18]
 
-    H_rot = sample[:, 3:6]
-    L_rot = sample[:, 9:12]
-    R_rot = sample[:, 15:18]
+    # ---------- ROM ----------
+    rom_head_score  = int((1-alpha_rot) * compute_rom(H) / 0.5 * 100 + alpha_rot * compute_rom(H_rot)/np.radians(180)*100)
+    rom_left_score  = int((1-alpha_rot) * compute_rom(L) / 0.5 * 100 + alpha_rot * compute_rom(L_rot)/np.radians(180)*100)
+    rom_right_score = int((1-alpha_rot) * compute_rom(R) / 0.5 * 100 + alpha_rot * compute_rom(R_rot)/np.radians(180)*100)
 
-    # ROM
+    # Aggregated ROM
+    aggregated_rom = np.mean([rom_head_score, rom_left_score, rom_right_score])
+    aggregated_rom = np.clip(aggregated_rom, 0, 100)
 
-    def rom_pos(seg):
-        # 3D peak-to-peak distance
-        if isinstance(seg, torch.Tensor):
-            seg = seg.detach().cpu().numpy()
-        min_vals = seg.min(axis=0)
-        max_vals = seg.max(axis=0)
-        distance = np.linalg.norm(max_vals - min_vals)
-        return distance
+    # ---------- Movement Quality ----------
+    mq_head = (1-alpha_rot)*compute_movement_quality(H) + alpha_rot*compute_movement_quality(H_rot)
+    mq_left = (1-alpha_rot)*compute_movement_quality(L) + alpha_rot*compute_movement_quality(L_rot)
+    mq_right = (1-alpha_rot)*compute_movement_quality(R) + alpha_rot*compute_movement_quality(R_rot)
 
-    def rom_rot(seg):
-        # angular excursion in degrees
-        if isinstance(seg, torch.Tensor):
-            seg = seg.detach().cpu().numpy()
-        min_vals = seg.min(axis=0)
-        max_vals = seg.max(axis=0)
-        return np.linalg.norm(max_vals - min_vals)
-    
-    def compute_rom_score(pos_seg, rot_seg, alpha_rot=0.5, max_pos=0.5, max_rot=180):
-        # max_pos in meters, max_rot in degrees
-        pos_rom = rom_pos(pos_seg) / max_pos
-        rot_rom = rom_rot(rot_seg) / max_rot
-        score = (1 - alpha_rot) * pos_rom + alpha_rot * rot_rom
-        # score = np.clip(score * 100, 0, 100)
-        return int(score)
+    # Aggregated Movement Quality
+    aggregated_mq = np.mean([mq_head, mq_left, mq_right])
+    aggregated_mq = np.clip(aggregated_mq, 0, 100)
 
-    rom_head_score  = compute_rom_score(H, H_rot)
-    rom_left_score  = compute_rom_score(L, L_rot)
-    rom_right_score = compute_rom_score(R, R_rot)
+    # ---------- Compensation ----------
+    comp_score = compute_compensation(H, L, R)
 
-    # Movement Quality
-    def movement_quality(seg):
-        vel = np.diff(seg, axis=0)
-        acc = np.diff(vel, axis=0)
-        jerk = np.diff(acc, axis=0)
-        smoothness = 1 / (1 + np.mean(np.abs(jerk)))
-        variability = 1 / (1 + np.var(seg.cpu().numpy()))
-        return (smoothness * 0.6 + variability * 0.4) * 100
+    # ---------- Aggregated Overall Score ----------
+    aggregated_score = (weights['rom'] * aggregated_rom +
+                        weights['mq'] * aggregated_mq +
+                        weights['comp'] * comp_score)
+    aggregated_score = np.clip(aggregated_score, 0, 100)
 
-    mq_head_pos = movement_quality(H)
-    mq_left_pos = movement_quality(L)
-    mq_right_pos = movement_quality(R)
-
-    mq_head_rot = movement_quality(H_rot)
-    mq_left_rot = movement_quality(L_rot)
-    mq_right_rot = movement_quality(R_rot)
-
-    # Combined MQ
-    mq_head = (1 - alpha_rot) * mq_head_pos + alpha_rot * mq_head_rot
-    mq_left = (1 - alpha_rot) * mq_left_pos + alpha_rot * mq_left_rot
-    mq_right = (1 - alpha_rot) * mq_right_pos + alpha_rot * mq_right_rot
-
-    # -------- Compensation ----------
-    wrist_disp = np.linalg.norm(np.ptp(L, axis=0)) + np.linalg.norm(np.ptp(R, axis=0))
-    head_disp = np.linalg.norm(np.ptp(H, axis=0))
-
-    if head_disp > 0.4 * wrist_disp:
-        comp_score = min(100, (head_disp / wrist_disp) * 100)
-    else:
-        comp_score = 0
-
-    # Injury Side Detection
+    # ---------- Injury Side Detection ----------
     region_names = ["Head-Shoulder", "Left Wrist", "Right Wrist"]
     region_imp = np.array([
-    importance[0:6].sum(),   # Head channels
-    importance[6:12].sum(),  # Left wrist channels
-    importance[12:18].sum()  # Right wrist channels
+        importance[0:6].sum(),   # Head channels
+        importance[6:12].sum(),  # Left wrist channels
+        importance[12:18].sum()  # Right wrist channels
     ])
-
-    # Normalize to 0-100 scale
-    region_severity = (region_imp / region_imp.max()) * 100  # max region gets 100
+    region_severity = (region_imp / region_imp.max()) * 100
     injured_regions = {name: float(score) for name, score in zip(region_names, region_severity)}
 
     return {
-        "rom": {
-            "head": rom_head_score,
-            "left": rom_left_score,
-            "right": rom_right_score
-        },
-        "movement_quality": {
-            "head": mq_head,
-            "left": mq_left,
-            "right": mq_right
-        },
+        "rom": {"head": rom_head_score, "left": rom_left_score, "right": rom_right_score},
+        "aggregated_rom": aggregated_rom,
+        "movement_quality": {"head": mq_head, "left": mq_left, "right": mq_right},
+        "aggregated_mq": aggregated_mq,
         "compensation": comp_score,
-        "injured_region": injured_regions,
+        "aggregated_score": aggregated_score,
+        "injured_region": injured_regions
     }
 
 
@@ -274,11 +288,11 @@ def run_inference(sample, task):
 
 
 # FASTAPI SERVER
-app = FastAPI()
+# app = FastAPI()
 
-@app.post("/infer")
-def infer(request: InferenceRequest):
-    sample = load_user_data(request.user, request.task)
-    signals = sample[:, 1:]
-    result = run_inference(signals, request.task)
-    return result
+# @app.post("/infer")
+# def infer(request: InferenceRequest):
+#     sample = load_user_data(request.user, request.task)
+#     signals = sample[:, 1:]
+#     result = run_inference(signals, request.task)
+#     return result

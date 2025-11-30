@@ -1,4 +1,4 @@
-from variables import *
+from .variables import *
 
 import numpy as np
 import pandas as pd

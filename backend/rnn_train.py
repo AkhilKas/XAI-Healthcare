@@ -13,10 +13,10 @@ from sklearn.model_selection import LeaveOneOut, ParameterGrid
 from joblib import Parallel, delayed, parallel_backend
 import matplotlib.pyplot as plt
 
-from variables import *
-from apply_feature_filter import *
-from helper_functions import *
-from param_grid import *
+from .variables import *
+from .apply_feature_filter import *
+from .helper_functions import *
+from .param_grid import *
 
 
 #######################################################################################################
@@ -234,7 +234,6 @@ if __name__ == "__main__":
             control_data = pickle.load(f)
 
         g1, g0 = (patient_data, control_data)
-        print(MODEL)
         start_total = time.time()
         metrics, best_params = run_rnn(g1, g0)
         end_total = time.time()

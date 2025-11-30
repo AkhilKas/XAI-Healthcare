@@ -7,13 +7,61 @@ import { BodyDiagram } from './components/BodyDiagram';
 import { Motion3D } from './components/Motion3D';
 import { FindingsCard } from './components/FindingsCard';
 import { AnalysisPanel } from './components/AnalysisPanel';
+import { InjuryPredictionCard } from './components/InjuryPredictionCard';
 
 function App() {
-  const [selectedPatient, setSelectedPatient] = useState('Sample_patient');
+  const [selectedPatient, setSelectedPatient] = useState('patient_1');
   const [selectedTask, setSelectedTask] = useState('Jar opening');
   const [activeView, setActiveView] = useState('overview');
 
-  const handleAnalyze = () => setActiveView('analysis');
+  const [loading, setLoading] = useState(false);
+  const [disabled, setDisabled] = useState(true);
+  // const [analysisData, setAnalysisData] = useState(null);
+  const [ROM, setROM] = useState(33);
+  const [MQ, setMQ] = useState(66);
+  const [COMP, setComp] = useState(100);
+
+  const [percentage, setPercentage] = useState(0);
+  const [llmSummary, setLlmSummary] = useState("Loading overview...");
+
+
+
+  const handleGo = async () => {
+    setActiveView('overview');
+    setLoading(true);
+
+    try {
+      const response = await fetch('http://localhost:8000/go', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          patient: selectedPatient,
+          task: selectedTask
+        })
+      });
+
+      const data = await response.json();
+      console.log("API Response:", data);
+
+      setDisabled(false);
+
+      setROM(parseInt(data.metrics.aggregated_rom))
+      setMQ(parseInt(data.metrics.aggregated_mq))
+      setComp(parseInt(data.metrics.compensation))
+
+      setPercentage(parseInt(data.probability_injured * 100))
+      setLlmSummary(data.llm_summary.one_sentence_summary);
+
+    } catch (error) {
+      console.error("Error while analyzing:", error);
+    }
+    finally {
+      setLoading(false); // stop loader
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -24,7 +72,8 @@ function App() {
           setSelectedPatient={setSelectedPatient}
           selectedTask={selectedTask}
           setSelectedTask={setSelectedTask}
-          onAnalyze={handleAnalyze}
+          onAnalyze={handleGo}
+          loading={loading}
         />
         <AIAssistant />
       </div>
@@ -70,11 +119,20 @@ function App() {
           {activeView === 'overview' && (
             <div className="max-w-7xl mx-auto space-y-6">
               <div className="bg-white rounded-lg shadow-sm border p-6">
-                <h2 className="text-lg font-semibold mb-4">Risk Assessment Overview</h2>
+                <h2 className="text-lg font-semibold mb-4">Risk Assessment</h2>
                 <div className="grid grid-cols-3 gap-6">
-                  <RiskIndicator label="Str. Ext" value={87} color="#fbbf24" />
-                  <RiskIndicator label="Scap. Subs" value={92} color="#22c55e" />
-                  <RiskIndicator label="Pec Maj" value={74} color="#ef4444" />
+                  <RiskIndicator label="Range of Motion" value={ROM} color={ROM <= 33 ? "#ef4444" : ROM <= 66 ? "#fbbf24" : "#22c55e"} style={{ opacity: disabled ? 0.5 : 1 }} />
+                  <RiskIndicator label="Movement Quality" value={MQ} color={MQ <= 33 ? "#ef4444" : MQ <= 66 ? "#fbbf24" : "#22c55e"}  style={{ opacity: disabled ? 0.5 : 1 }} />
+                  <RiskIndicator label="Shoulder Compensation" value={COMP} color={COMP <= 33 ? "#ef4444" : COMP <= 66 ? "#fbbf24" : "#22c55e"} style={{ opacity: disabled ? 0.5 : 1 }} />
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <div className="grid grid-cols-2 gap-6">
+                  < InjuryPredictionCard label="Injury Prediction" status={percentage > 50 ? "Injured" : "Non-Injured"} percentage={percentage} opacity={disabled ? 0.5 : 1} />
+                  <div className="bg-white rounded-lg shadow-sm border p-6" >
+                    <h2 className="text-lg font-semibold mb-4">Overview</h2>
+                    <p className="text-sm text-gray-700 mb-4" style={{ opacity: disabled ? 0.5 : 1 }}>{llmSummary}</p>
+                  </div>
                 </div>
               </div>
             </div>

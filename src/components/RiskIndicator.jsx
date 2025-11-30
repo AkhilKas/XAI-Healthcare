@@ -1,8 +1,8 @@
 import React from 'react';
 
-export const RiskIndicator = ({ label, value, color }) => (
+export const RiskIndicator = ({ label, value, color, style }) => (
   <div className="flex flex-col items-center p-4">
-    <div className="relative w-20 h-20">
+    <div className="relative w-20 h-20" style={style}>
       <svg className="transform -rotate-90 w-20 h-20">
         <circle cx="40" cy="40" r="32" stroke="#e5e7eb" strokeWidth="6" fill="none" />
         <circle
