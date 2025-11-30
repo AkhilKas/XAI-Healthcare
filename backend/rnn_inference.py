@@ -151,7 +151,7 @@ def compute_motion_metrics(sample, importance, alpha_rot=0.5, weights={'rom':0.4
     aggregated_score = np.clip(aggregated_score, 0, 100)
 
     # ---------- Injury Side Detection ----------
-    region_names = ["Head-Shoulder", "Left Wrist", "Right Wrist"]
+    region_names = ["head", "left", "right"]
     region_imp = np.array([
         importance[0:6].sum(),   # Head channels
         importance[6:12].sum(),  # Left wrist channels
@@ -177,14 +177,21 @@ def call_llm(summary_inputs):
     Connect your OpenAI / Gemini / Llama model here.
     Currently returns dummy text.
     """
+    # https://www.useinvent.com/e/ast_5k8YHb9LcIqNTWBR2MJ0sY
+    # https://www.useinvent.com/e/ast_5k8YHb9LcIqNTWBR2MJ0sY
+    # key findings - find top 3 always in form of dictionary key:value pairs - add error, warning, success term for each key based on severity
     return {
         "one_sentence_summary": "The movement indicates mild impairment with notable asymmetry.",
-        "key_findings": [
-            "Asymmetric wrist motion",
-            "Compensatory head movement",
-            "Reduced left wrist elevation"
-        ],
-        "detailed_analysis": "The user demonstrates limited ROM in the left wrist with elevated compensatory patterns. A healthier motion would involve stabilizing the head while improving controlled wrist elevation. Expected improvements include smoother trajectory and reduced muscular load."
+        "key_findings": {
+            "Error: Asymmetric wrist motion" : "aaaaaaaaaaa",
+            "Warning: Compensatory head movement": "bbbbbbbbb",
+            "Success: Reduced left wrist elevation": "cccccccccccc"
+        },
+        "counterfactual_analysis": ["jshbcsdhjbcdshjcbsdhjv"],
+        "recommendations": ["sjcbsjhcbdshjehcbejvbdjvdhfbvdjh"],
+        "detailed_analysis": ["The user demonstrates limited ROM in the left wrist with elevated compensatory patterns.", \
+                              "A healthier motion would involve stabilizing the head while improving controlled wrist elevation.",\
+                                  "Expected improvements include smoother trajectory and reduced muscular load."]
     }
 
 

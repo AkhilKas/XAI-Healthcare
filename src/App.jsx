@@ -4,10 +4,10 @@ import { Sidebar } from './components/Sidebar';
 import { AIAssistant } from './components/AIAssistant';
 import { RiskIndicator } from './components/RiskIndicator';
 import { BodyDiagram } from './components/BodyDiagram';
-import { Motion3D } from './components/Motion3D';
 import { FindingsCard } from './components/FindingsCard';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { InjuryPredictionCard } from './components/InjuryPredictionCard';
+import { FigureDisplay } from './components/FigureDisplay';
 
 function App() {
   const [selectedPatient, setSelectedPatient] = useState('patient_1');
@@ -24,7 +24,21 @@ function App() {
   const [percentage, setPercentage] = useState(0);
   const [llmSummary, setLlmSummary] = useState("Loading overview...");
 
+  const [head, setHead] = useState(0);
+  const [left, setLeft] = useState(0);
+  const [right, setRight] = useState(0);
 
+  const initialFindings = {
+    "Error: Finding 1": "key finding 1 description",
+    "Warning: Finding 2": "key finding 2 description",
+    "Success: Finding 3": "key finding 3 description",
+  };
+  const [keyFindings, setKeyFindings] = useState(initialFindings);
+  const [figure, setFigure] = useState("Loading figure...");
+
+  const [detailed_analysis, setDetailedAnalysis] = useState([])
+  const [counterfactual_analysis, setCounterfactualAnalysis] = useState([])
+  const [recommendations, setRecommendations] = useState([])
 
   const handleGo = async () => {
     setActiveView('overview');
@@ -53,6 +67,17 @@ function App() {
 
       setPercentage(parseInt(data.probability_injured * 100))
       setLlmSummary(data.llm_summary.one_sentence_summary);
+
+      setHead(data.metrics.injured_region.head)
+      setLeft(data.metrics.injured_region.left)
+      setRight(data.metrics.injured_region.right)
+
+      setKeyFindings(data.llm_summary.key_findings);
+      setFigure(data.trajectory_3d);
+
+      setDetailedAnalysis(data.llm_summary.detailed_analysis);
+      setCounterfactualAnalysis(data.llm_summary.counterfactual_analysis);
+      setRecommendations(data.llm_summary.recommendations);
 
     } catch (error) {
       console.error("Error while analyzing:", error);
@@ -123,7 +148,7 @@ function App() {
                 <div className="grid grid-cols-3 gap-6">
                   <RiskIndicator label="Range of Motion" value={ROM} color={ROM <= 33 ? "#ef4444" : ROM <= 66 ? "#fbbf24" : "#22c55e"} style={{ opacity: disabled ? 0.5 : 1 }} />
                   <RiskIndicator label="Movement Quality" value={MQ} color={MQ <= 33 ? "#ef4444" : MQ <= 66 ? "#fbbf24" : "#22c55e"}  style={{ opacity: disabled ? 0.5 : 1 }} />
-                  <RiskIndicator label="Shoulder Compensation" value={COMP} color={COMP <= 33 ? "#ef4444" : COMP <= 66 ? "#fbbf24" : "#22c55e"} style={{ opacity: disabled ? 0.5 : 1 }} />
+                  <RiskIndicator label="Head Compensation" value={COMP} color={COMP <= 33 ? "#ef4444" : COMP <= 66 ? "#fbbf24" : "#22c55e"} style={{ opacity: disabled ? 0.5 : 1 }} />
                 </div>
               </div>
               <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -143,26 +168,23 @@ function App() {
               <div className="grid grid-cols-2 gap-6">
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <h2 className="text-lg font-semibold mb-4">Movement Analysis</h2>
-                  <BodyDiagram />
+                  <BodyDiagram values={{ head, left, right }} style={{ opacity: disabled ? 0.5 : 1 }} />
                 </div>
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <h2 className="text-lg font-semibold mb-4">Key Findings</h2>
-                  <div className="space-y-3">
-                    <FindingsCard
-                      type="error"
-                      title="Abnormal Scapular Rhythm"
-                      description="Elevated scapular winging detected during forward flexion"
-                    />
-                    <FindingsCard
-                      type="warning"
-                      title="Trunk Compensation Detected"
-                      description="Moderate trunk flexion during reaching movements"
-                    />
-                    <FindingsCard
-                      type="success"
-                      title="Core Stability Maintained"
-                      description="Good posture control throughout movement patterns"
-                    />
+                  <div className="space-y-3" style={{ opacity: disabled ? 0.5 : 1 }}>
+                    {Object.entries(keyFindings).map(([title, description], index) => (
+                      <FindingsCard
+                        key={index}
+                        type={title.toLowerCase().includes("error")
+                          ? "error"
+                          : title.toLowerCase().includes("warning")
+                          ? "warning"
+                          : "success"}
+                        title={title}
+                        description={description}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
@@ -173,36 +195,24 @@ function App() {
             <div className="max-w-7xl mx-auto space-y-6">
               <div className="grid grid-cols-3 gap-6">
                 <div className="col-span-2 bg-white rounded-lg shadow-sm border p-6">
-                  <h2 className="text-lg font-semibold mb-4">3D Movement Reconstruction</h2>
-                  <Motion3D />
+                  <h2 className="text-lg font-semibold mb-4">3D Plot</h2>
+                  <FigureDisplay imgBase64={figure} style={{ opacity: disabled ? 0.5 : 1 }}/>
                 </div>
                 <div className="space-y-4">
                   <AnalysisPanel
-                    title="Detailed Analysis (9.3)"
+                    title="Detailed Analysis"
                     color="blue"
-                    items={[
-                      'Limited ROM: 117° elevation vs normal 165°',
-                      'Scapular positioning abnormal throughout arc',
-                      'Compensatory trunk extension present'
-                    ]}
+                    items={detailed_analysis}
                   />
                   <AnalysisPanel
-                    title="Counterfactual Analysis (9.3)"
+                    title="Counterfactual Analysis"
                     color="green"
-                    items={[
-                      'If scapular dyskinesis reduced by 15°',
-                      'With maintained trunk posture',
-                      'Classification: Improved to healthy range'
-                    ]}
+                    items={counterfactual_analysis}
                   />
                   <AnalysisPanel
                     title="Recommendations"
                     color="amber"
-                    items={[
-                      'Focus on glenohumeral mobilization',
-                      'Strengthen scapular stabilizers',
-                      'Address postural compensation'
-                    ]}
+                    items={recommendations}
                   />
                 </div>
               </div>
