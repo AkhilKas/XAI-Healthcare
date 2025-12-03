@@ -3,3 +3,12 @@ extras/
 __pycache__/
 nv/
 node_modules
+
+# Environment variables
+.env
+*.env
+.env.local
+.env.*.local
+
+# Keep .env.example
+!.env.example
