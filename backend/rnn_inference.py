@@ -4,12 +4,27 @@ from pydantic import BaseModel
 
 import base64
 import io
+import os
 import numpy as np
+from dotenv import load_dotenv
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pickle
 import torch
+import google.generativeai as genai
+import json
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Get API key from environment
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')  # Default to flash if not set
+
+# Validate API key is loaded
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY not found in environment variables. Please check your .env file.")
 
 from .rnn_train import RNNClassifier, rnn_channel_importance_from_weights
 from .variables import chan_name, DOFS, DEVICE
@@ -70,32 +85,7 @@ def compute_rom(seg, perc=95):
     rom = np.linalg.norm(upper - lower)
     return rom
 
-# # ---------- Movement Quality ---------- : V1
-# def compute_movement_quality(seg, dt=1/60):
-#     """
-#     Movement quality based on normalized jerk and variability.
-#     """
-#     if isinstance(seg, torch.Tensor):
-#         seg = seg.detach().cpu().numpy()
-
-#     # Smooth the signal
-#     seg = lowpass_filter(seg)
-
-#     vel = np.gradient(seg, dt, axis=0)
-#     acc = np.gradient(vel, dt, axis=0)
-#     jerk = np.gradient(acc, dt, axis=0)
-
-#     # Normalized jerk metric (higher = smoother)
-#     traj_len = np.sum(np.linalg.norm(vel, axis=1)) * dt
-#     njm = traj_len**2 / (np.sum(np.linalg.norm(jerk, axis=1)**2) * dt**5 + 1e-6)  # avoid div 0
-
-#     # Variability metric: multidimensional variance
-#     variability = 1 / (1 + np.trace(np.cov(seg.T)))  # higher = more consistent
-
-#     # Weighted MQ score
-#     mq_score = (0.6 * njm + 0.4 * variability) * 100
-#     return np.clip(mq_score, 0, 100)
-
+# ---------- Movement Quality ---------- :
 def compute_movement_quality(seg, dt=1/60):
     """
     Movement quality based on normalized jerk and variability.
@@ -165,58 +155,7 @@ def compute_compensation(head, left, right):
     return comp_score
 
 
-# # ROM / QUALITY / COMPENSATION COMPUTATION - V1
-# def compute_motion_metrics(sample, importance, alpha_rot=0.5, weights={'rom':0.4, 'mq':0.5, 'comp':0.1}):
-#     H, L, R = sample[:, 0:3], sample[:, 6:9], sample[:, 12:15]
-#     H_rot, L_rot, R_rot = sample[:, 3:6], sample[:, 9:12], sample[:, 15:18]
-
-#     # ---------- ROM ----------
-#     rom_head_score  = int((1-alpha_rot) * compute_rom(H) / 0.5 * 100 + alpha_rot * compute_rom(H_rot)/np.radians(180)*100)
-#     rom_left_score  = int((1-alpha_rot) * compute_rom(L) / 0.5 * 100 + alpha_rot * compute_rom(L_rot)/np.radians(180)*100)
-#     rom_right_score = int((1-alpha_rot) * compute_rom(R) / 0.5 * 100 + alpha_rot * compute_rom(R_rot)/np.radians(180)*100)
-
-#     # Aggregated ROM
-#     aggregated_rom = np.mean([rom_head_score, rom_left_score, rom_right_score])
-#     aggregated_rom = np.clip(aggregated_rom, 0, 100)
-
-#     # ---------- Movement Quality ----------
-#     mq_head = (1-alpha_rot)*compute_movement_quality(H) + alpha_rot*compute_movement_quality(H_rot)
-#     mq_left = (1-alpha_rot)*compute_movement_quality(L) + alpha_rot*compute_movement_quality(L_rot)
-#     mq_right = (1-alpha_rot)*compute_movement_quality(R) + alpha_rot*compute_movement_quality(R_rot)
-
-#     # Aggregated Movement Quality
-#     aggregated_mq = np.mean([mq_head, mq_left, mq_right])
-#     aggregated_mq = np.clip(aggregated_mq, 0, 100)
-
-#     # ---------- Compensation ----------
-#     comp_score = compute_compensation(H, L, R)
-
-#     # ---------- Aggregated Overall Score ----------
-#     aggregated_score = (weights['rom'] * aggregated_rom +
-#                         weights['mq'] * aggregated_mq +
-#                         weights['comp'] * comp_score)
-#     aggregated_score = np.clip(aggregated_score, 0, 100)
-
-#     # ---------- Injury Side Detection ----------
-#     region_names = ["head", "left", "right"]
-#     region_imp = np.array([
-#         importance[0:6].sum(),   # Head channels
-#         importance[6:12].sum(),  # Left wrist channels
-#         importance[12:18].sum()  # Right wrist channels
-#     ])
-#     region_severity = (region_imp / region_imp.max()) * 100
-#     injured_regions = {name: float(score) for name, score in zip(region_names, region_severity)}
-
-#     return {
-#         "rom": {"head": rom_head_score, "left": rom_left_score, "right": rom_right_score},
-#         "aggregated_rom": aggregated_rom,
-#         "movement_quality": {"head": mq_head, "left": mq_left, "right": mq_right},
-#         "aggregated_mq": aggregated_mq,
-#         "compensation": comp_score,
-#         "aggregated_score": aggregated_score,
-#         "injured_region": injured_regions
-#     }
-
+# ROM / QUALITY / COMPENSATION COMPUTATION :
 def compute_motion_metrics(sample, importance, alpha_rot=0.5, weights={'rom':0.4, 'mq':0.5, 'comp':0.1}):
     H, L, R = sample[:, 0:3], sample[:, 6:9], sample[:, 12:15]
     H_rot, L_rot, R_rot = sample[:, 3:6], sample[:, 9:12], sample[:, 15:18]
@@ -305,29 +244,217 @@ def compute_motion_metrics(sample, importance, alpha_rot=0.5, weights={'rom':0.4
         "injured_region": injured_regions
     }
 
+# Configure Gemini API
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Initialize the model
+llm_model = genai.GenerativeModel(
+    model_name=GEMINI_MODEL,
+    generation_config={
+        "temperature": float(os.getenv('GEMINI_TEMPERATURE', 0.7)),
+        "max_output_tokens": int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', 2048)),
+    }
+)
+
 # LLM 
 def call_llm(summary_inputs):
     """
-    Connect your OpenAI / Gemini / Llama model here.
-    Currently returns dummy text.
+    Uses Google Gemini to generate clinical insights from motion analysis data.
+    
+    Args:
+        summary_inputs: Dictionary containing:
+            - prediction: 0 or 1 (healthy or injured)
+            - importance: Array of feature importance values
+            - metrics: Dictionary with ROM, movement quality, compensation scores
+    
+    Returns:
+        Dictionary with structured clinical analysis
     """
-    # https://www.useinvent.com/e/ast_5k8YHb9LcIqNTWBR2MJ0sY
-    # https://www.useinvent.com/e/ast_5k8YHb9LcIqNTWBR2MJ0sY
-    # key findings - find top 3 always in form of dictionary key:value pairs - add error, warning, success term for each key based on severity
-    return {
-        "one_sentence_summary": "The movement indicates mild impairment with notable asymmetry.",
-        "key_findings": {
-            "Error: Asymmetric wrist motion" : "aaaaaaaaaaa",
-            "Warning: Compensatory head movement": "bbbbbbbbb",
-            "Success: Reduced left wrist elevation": "cccccccccccc"
-        },
-        "counterfactual_analysis": ["jshbcsdhjbcdshjcbsdhjv"],
-        "recommendations": ["sjcbsjhcbdshjehcbejvbdjvdhfbvdjh"],
-        "detailed_analysis": ["The user demonstrates limited ROM in the left wrist with elevated compensatory patterns.", \
-                              "A healthier motion would involve stabilizing the head while improving controlled wrist elevation.",\
-                                  "Expected improvements include smoother trajectory and reduced muscular load."]
-    }
+    
+    # Extract data from summary_inputs
+    prediction = summary_inputs.get('prediction', 0)
+    metrics = summary_inputs.get('metrics', {})
+    
+    # Prepare the data for the prompt
+    rom_data = metrics.get('rom', {})
+    mq_data = metrics.get('movement_quality', {})
+    injured_region = metrics.get('injured_region', {})
+    
+    # Build the prompt
+    prompt = f"""You are an expert orthopedic physical therapist analyzing motion data from IMU sensors.
 
+**Patient Classification:** {"INJURED" if prediction == 1 else "HEALTHY"}
+**Confidence:** {summary_inputs.get('probability', 0)*100:.1f}%
+
+**Motion Metrics:**
+
+Range of Motion (ROM) Scores (0-100, higher = better):
+- Head: {rom_data.get('head', 0):.1f}
+- Left Wrist: {rom_data.get('left', 0):.1f}
+- Right Wrist: {rom_data.get('right', 0):.1f}
+- Aggregated ROM: {metrics.get('aggregated_rom', 0):.1f}
+
+Movement Quality Scores (0-100, higher = smoother):
+- Head: {mq_data.get('head', 0):.1f}
+- Left Wrist: {mq_data.get('left', 0):.1f}
+- Right Wrist: {mq_data.get('right', 0):.1f}
+- Aggregated Quality: {metrics.get('aggregated_mq', 0):.1f}
+
+Compensation Score: {metrics.get('compensation', 0):.1f} (0-100, lower = better)
+Overall Score: {metrics.get('aggregated_score', 0):.1f}
+
+Most Affected Regions (by importance):
+- Head: {injured_region.get('head', 0):.1f}%
+- Left: {injured_region.get('left', 0):.1f}%
+- Right: {injured_region.get('right', 0):.1f}%
+
+**Task:** Provide a clinical analysis in the following JSON format:
+
+{{
+  "one_sentence_summary": "A single concise sentence summarizing the patient's condition",
+  "key_findings": {{
+    "Error: [Issue]": "Brief explanation of critical problem",
+    "Warning: [Issue]": "Brief explanation of concerning pattern",
+    "Success: [Positive]": "Brief explanation of good movement pattern"
+  }},
+  "counterfactual_analysis": [
+    "If [specific change], then [expected outcome]",
+    "Alternative scenario and its impact"
+  ],
+  "recommendations": [
+    "Specific exercise or intervention recommendation",
+    "Another actionable recommendation"
+  ],
+  "detailed_analysis": [
+    "Detailed observation about ROM patterns",
+    "Analysis of movement quality and compensations",
+    "Expected improvements with intervention"
+  ]
+}}
+
+**Guidelines:**
+1. Key findings MUST have exactly 3 items: one Error, one Warning, one Success
+2. Base severity on the scores: <40=Error, 40-70=Warning, >70=Success
+3. Be specific about body regions (head, left wrist, right wrist)
+4. Counterfactual analysis should describe realistic improvements
+5. Recommendations should be evidence-based and actionable
+6. Return ONLY valid JSON, no markdown formatting or extra text
+
+Analyze the data and respond with the JSON:"""
+
+    try:
+        # Call Gemini API
+        response = llm_model.generate_content(prompt)
+        
+        # Extract the text response
+        response_text = response.text.strip()
+        
+        # Remove markdown code blocks if present
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]  # Remove ```json
+        if response_text.startswith('```'):
+            response_text = response_text[3:]  # Remove ```
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]  # Remove ```
+        
+        response_text = response_text.strip()
+        
+        # Parse JSON response
+        llm_output = json.loads(response_text)
+        
+        # Validate structure
+        required_keys = ['one_sentence_summary', 'key_findings', 'counterfactual_analysis', 
+                        'recommendations', 'detailed_analysis']
+        
+        for key in required_keys:
+            if key not in llm_output:
+                raise ValueError(f"Missing required key: {key}")
+        
+        # Ensure key_findings has exactly 3 items with proper prefixes
+        if not isinstance(llm_output['key_findings'], dict):
+            raise ValueError("key_findings must be a dictionary")
+        
+        findings = llm_output['key_findings']
+        has_error = any(k.startswith('Error:') for k in findings.keys())
+        has_warning = any(k.startswith('Warning:') for k in findings.keys())
+        has_success = any(k.startswith('Success:') for k in findings.keys())
+        
+        if not (has_error and has_warning and has_success):
+            print("Warning: LLM response missing Error/Warning/Success prefixes, using fallback")
+            return get_fallback_response(summary_inputs)
+        
+        return llm_output
+        
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+        print(f"Response text: {response_text[:500]}")  # Print first 500 chars for debugging
+        return get_fallback_response(summary_inputs)
+        
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        return get_fallback_response(summary_inputs)
+
+
+def get_fallback_response(summary_inputs):
+    """
+    Fallback response if LLM fails or returns invalid data.
+    Generates a basic analysis from the metrics.
+    """
+    metrics = summary_inputs.get('metrics', {})
+    prediction = summary_inputs.get('prediction', 0)
+    
+    rom_data = metrics.get('rom', {})
+    mq_data = metrics.get('movement_quality', {})
+    injured_region = metrics.get('injured_region', {})
+    
+    # Determine most affected region
+    max_region = max(injured_region.items(), key=lambda x: x[1])[0] if injured_region else "unknown"
+    
+    # Generate findings based on scores
+    findings = {}
+    
+    # Error (lowest score)
+    rom_scores = [(k, v) for k, v in rom_data.items()]
+    if rom_scores:
+        lowest_rom = min(rom_scores, key=lambda x: x[1])
+        findings[f"Error: Limited {lowest_rom[0]} ROM"] = \
+            f"Range of motion in {lowest_rom[0]} region is {lowest_rom[1]:.1f}/100, indicating significant restriction."
+    
+    # Warning (compensation)
+    comp_score = metrics.get('compensation', 0)
+    if comp_score > 30:
+        findings["Warning: Compensatory movement patterns"] = \
+            f"Compensation score of {comp_score:.1f}/100 suggests reliance on alternative movement strategies."
+    else:
+        findings["Warning: Movement quality concerns"] = \
+            f"Movement quality score of {metrics.get('aggregated_mq', 0):.1f}/100 indicates some irregularities."
+    
+    # Success (highest score)
+    if rom_scores:
+        highest_rom = max(rom_scores, key=lambda x: x[1])
+        findings[f"Success: Preserved {highest_rom[0]} mobility"] = \
+            f"{highest_rom[0].capitalize()} region shows good ROM at {highest_rom[1]:.1f}/100."
+    
+    status = "impaired movement" if prediction == 1 else "functional movement"
+    
+    return {
+        "one_sentence_summary": f"Analysis indicates {status} with {max_region} region showing highest concern.",
+        "key_findings": findings,
+        "counterfactual_analysis": [
+            f"If {max_region} ROM improved by 15%, overall movement quality would likely increase significantly.",
+            "Reducing compensatory patterns through targeted exercises could restore more natural movement."
+        ],
+        "recommendations": [
+            f"Focus on range of motion exercises for {max_region} region",
+            "Implement movement pattern retraining to reduce compensation",
+            "Progressive strengthening of stabilizing muscles"
+        ],
+        "detailed_analysis": [
+            f"Patient demonstrates {metrics.get('aggregated_rom', 0):.1f}/100 overall ROM with primary limitation in {max_region}.",
+            f"Movement quality score of {metrics.get('aggregated_mq', 0):.1f}/100 suggests {'smooth' if metrics.get('aggregated_mq', 0) > 70 else 'irregular'} motion patterns.",
+            "Systematic rehabilitation focusing on mobility and motor control is recommended."
+        ]
+    }
 
 def generate_plot(data):
     """Plot 3D stick-figure showing head and wrists (hands)"""
