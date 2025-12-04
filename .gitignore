@@ -1,8 +1,11 @@
+# Python
 pickled_datasets/
 extras/
 __pycache__/
 nv/
 node_modules
+.venv/
+venv/
 
 # Environment variables
 .env
