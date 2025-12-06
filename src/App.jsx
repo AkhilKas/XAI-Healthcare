@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, User } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
-import { AIAssistant } from './components/AIAssistant';
+import AIAssistant from './components/AIAssistant';
 import { RiskIndicator } from './components/RiskIndicator';
 import { BodyDiagram } from './components/BodyDiagram';
 import { FindingsCard } from './components/FindingsCard';
@@ -10,8 +10,8 @@ import { InjuryPredictionCard } from './components/InjuryPredictionCard';
 import { FigureDisplay } from './components/FigureDisplay';
 
 function App() {
-  const [selectedPatient, setSelectedPatient] = useState('patient_1');
-  const [selectedTask, setSelectedTask] = useState('Jar opening');
+  const [selectedPatient, setSelectedPatient] = useState('');
+  const [selectedTask, setSelectedTask] = useState('');
   const [activeView, setActiveView] = useState('overview');
 
   const [loading, setLoading] = useState(false);
@@ -100,7 +100,29 @@ function App() {
           onAnalyze={handleGo}
           loading={loading}
         />
-        <AIAssistant />
+        <AIAssistant
+          selectedPatient={selectedPatient}
+          userContext={{
+            clinical_role: "surgeon",
+            expertise_level: "experienced",
+            dashboard_layer: "scan",
+            use_case: selectedTask
+          }}
+          ROM={ROM}
+          MQ={MQ}
+          COMP={COMP}
+          percentage={percentage}
+          llmSummary={llmSummary}
+          head={head}
+          left={left}
+          right={right}
+          keyFindings={keyFindings}
+          figure={figure}
+          detailed_analysis={detailed_analysis}
+          counterfactual_analysis={counterfactual_analysis}
+          recommendations={recommendations}
+        />
+
       </div>
 
       {/* Main Content */}

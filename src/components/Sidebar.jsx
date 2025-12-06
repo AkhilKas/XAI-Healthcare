@@ -23,8 +23,21 @@ export const Sidebar = ({ selectedPatient, setSelectedPatient, selectedTask, set
             onChange={handleChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
+            <option value="" disabled>
+              Select Patient
+            </option>
             <option>patient_1</option>
+            <option>patient_2</option>
+            <option>patient_3</option>
+            <option>patient_4</option>
+            <option>patient_5</option>
+            <option>patient_6</option>
             <option>control_1</option>
+            <option>control_2</option>
+            <option>control_3</option>
+            <option>control_4</option>
+            <option>control_5</option>
+            <option>control_6</option>
           </select>
         </div>
 
@@ -35,6 +48,9 @@ export const Sidebar = ({ selectedPatient, setSelectedPatient, selectedTask, set
             onChange={(e) => setSelectedTask(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
+            <option value="" disabled>
+              Select Task
+            </option>
             <option>Jar opening</option>
             <option>Key turning</option>
             <option>Wall cleaning</option>
