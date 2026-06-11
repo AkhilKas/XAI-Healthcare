@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const BodyDiagram = ({ values = { head: 20, left: 80, right: 50 }, style=style}) => {
+export const BodyDiagram = ({ values = { head: 20, left: 80, right: 50 }, style = {} }) => {
   // Helper to map percentage to color
   const getColor = (value) => {
     if (value >= 66) return "#ef4444"; // red

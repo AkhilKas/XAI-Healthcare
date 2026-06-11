@@ -145,7 +145,6 @@ def rnn_channel_importance_from_weights(obj, kind="lstm", layer=0):
         W_list.append(W_r)
     W = torch.cat(W_list, dim=0)
     H = rnn.hidden_size
-    n_gates = 4 if kind.lower() == "lstm" else 3
     Wg = W.view(-1, H, W.shape[1])
     imp = Wg.sum(dim=(0, 1))
     return imp / (imp.sum() + 1e-12)

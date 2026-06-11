@@ -179,7 +179,7 @@ def _rnn_loo_score(cfg, X_scaled, y, loo):
     except Exception:
         avg_training_acc = np.mean([np.array(a, dtype=float).mean() for a in training_acc_per_epoch])
 
-    return ba, cfg, np.array(y_true), np.array(y_pred), np.array(y_proba), model, avg_training_loss, avg_training_acc
+    return ba, cfg, np.array(y_true), np.array(y_pred), np.array(y_proba), model, avg_training_loss, avg_training_acc, metrics
 
 
 #######################################################################################################
@@ -195,7 +195,7 @@ def run_rnn(g1, g0):
             delayed(_rnn_loo_score)(params, X_scaled, y, loo) for params in grid
         )
 
-    best_score, best_params, y_true, y_pred, y_proba, model, avg_training_loss, avg_training_acc = max(results, key=lambda t: t[0])
+    best_score, best_params, y_true, y_pred, y_proba, model, avg_training_loss, avg_training_acc, metrics = max(results, key=lambda t: t[0])
 
     os.makedirs("trained_models", exist_ok=True)
     torch.save({

@@ -1,6 +1,6 @@
 import React from "react";
 
-export const FigureDisplay = ({ imgBase64, style = style }) => {
+export const FigureDisplay = ({ imgBase64, style = {} }) => {
   if (!imgBase64) return null; // nothing to show yet
 
   return (

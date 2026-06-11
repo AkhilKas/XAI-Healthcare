@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from .rnn_inference import load_model, load_user_data, run_inference
+from .rnn_inference import load_user_data, run_inference
 
 app = FastAPI()
 

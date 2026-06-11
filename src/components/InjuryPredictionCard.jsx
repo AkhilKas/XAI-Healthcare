@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const InjuryPredictionCard = ({ label = "Injury Prediction", status = "Injured", percentage = 80, opacity=opacity }) => {
+export const InjuryPredictionCard = ({ label = "Injury Prediction", status = "Injured", percentage = 80, opacity = 1 }) => {
 
   const color = status === "Injured" ? "#ef4444" : "#22c55e"; // red for injured, green for non-injured
 

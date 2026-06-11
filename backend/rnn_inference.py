@@ -402,9 +402,8 @@ def get_fallback_response(summary_inputs):
     """
     metrics = summary_inputs.get('metrics', {})
     prediction = summary_inputs.get('prediction', 0)
-    
+
     rom_data = metrics.get('rom', {})
-    mq_data = metrics.get('movement_quality', {})
     injured_region = metrics.get('injured_region', {})
     
     # Determine most affected region
