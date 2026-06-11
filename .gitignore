@@ -6,6 +6,13 @@ nv/
 node_modules
 .venv/
 venv/
+.pytest_cache/
+*.pyc
+
+# Vite
+build/
+dist/
+.vite/
 
 # Environment variables
 .env
