@@ -1,0 +1,37 @@
+[tool.pytest.ini_options]
+testpaths = ["tests/backend"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["pickled_datasets", "trained_models", "node_modules", "build"]
+
+[tool.ruff.lint]
+# Conservative selection: catch real errors (undefined names, unused imports,
+# syntax issues), skip purely stylistic complaints on existing code.
+select = [
+    "E9",  # syntax errors
+    "F",   # pyflakes (undefined names, unused imports, etc.)
+    "B",   # flake8-bugbear (real correctness issues)
+]
+ignore = [
+    "F403",  # star imports (used intentionally in variables/helper_functions)
+    "F405",  # may be undefined due to star imports
+    "B006",  # mutable default argument (low risk in this codebase)
+    "B007",  # unused loop control variable
+    "B008",  # function call in default arg (FastAPI Depends pattern)
+    "B905",  # zip without explicit strict=
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/backend/*" = ["E402"]  # imports after env setup in conftest
