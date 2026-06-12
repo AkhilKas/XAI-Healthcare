@@ -194,20 +194,6 @@ What the backend does (IMU → BiRNN → model)
   - The backend can also provide explainability artifacts (feature importance over time, attention maps, saliency) to help interpret model outputs in the frontend dashboard.
   - Metadata returned should include model_version, preprocessing config, and confidence/uncertainty estimates where available.
 
-Data handling and privacy
--------------------------
-**Due to strict privacy regulations and institutional policies at MGH, backend data containing patient information cannot be uploaded to a public repository. All sensitive data is handled in compliance with HIPAA and internal data protection guidelines.**
-
-- Do not commit any patient-level data, PHI, or institutional configuration to this repository.
-- Store sensitive data on institutional file systems or approved secure storage (S3 with encryption and access controls, internal secure drives, etc.).
-- The repository should only contain:
-  - Code for ingestion, transformation, and anonymization (no real data)
-  - Scripts that work with synthetic or sampled de-identified data
-  - Configuration templates (.env.example) that do not include secrets
-- For testing and demos, use synthetic or public de-identified datasets. The repo may include small synthetic datasets for local development in a folder such as `backend/testdata/` or `frontend/public/testdata/`.
-
-If you need help wiring this repo to a secure data environment at MGH, consult your institution's data governance or the data engineering team to establish approved data access patterns and secrets management.
-
 Running the app locally (using synthetic/test data)
 --------------------------------------------------
 1. Configure backend to use test data:
